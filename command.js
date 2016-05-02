@@ -53,8 +53,11 @@ function search(dname,tname,scolumn,pattern,fields){
     client.search({
         index:dbname,
         type:table,
-        q:scolumn+":"+pattern
+        q:scolumn+":"+pattern,
     },function(err,response){
         console.log(response.hits.total);
+        fs.writeFile("search.result",JSON.stringify(response,null,2),function(err){});
+    },function(error){
+        console.log(error.message);
     });
 }

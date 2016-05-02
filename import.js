@@ -1,3 +1,4 @@
+'use strict'
 var elasticsearch = require('elasticsearch');
 var fs = require('graceful-fs');
 var setting = JSON.parse(fs.readFileSync("config/setting"));
@@ -8,14 +9,27 @@ var dateFormat = require('dateformat');
 var LineByLineReader = require('line-by-line');
 var S = require('string');
 const exec = require('child_process').exec;
-//var sleep = require('sleep'); 
+
+var HashMap = require('hashmap');
+
+const EventEmitter = require('events');
+class MyEmitter extends EventEmitter {};
+const import_bot = new MyEmitter();
 
 var client;
 var tag;
 var import_again=0;
+var nums = 0;
 var import_record_nums=0;
+var count_importfile=0;
+var import_index=0;
 
-var HashMap = require('hashmap');
+var now_imports=0;
+var file_import_end=0;
+var fname;
+var file_map = new HashMap();
+
+
 var importedList = new HashMap();
 var ip = setting['db_ip'];
 var port = setting['db_port'];
@@ -27,118 +41,11 @@ if(process.argv[2]=="data"){
     var column = setting['fb_column'];
     var dataDir = setting['dataDir'];
 
-//readImportedList("/home/crazyrabbit/importGAIS2elastic/logs/8_total_list.list",function(){
-    connect2DB(ip,port,function(stat){
-        var date = dateFormat(new Date(), "yyyymmdd");
-        readlist(dataDir,datafilename,function(fname,total_column){
-            var nums = fname.length-1;
-            var i=0;
-            var count_importfile=0;
-            /*
-            for(i=0;i<nums;i++,count_importfile++){
-                if(importedList.get(fname[i])!==undefined){
-                    //console.log(fname[i]+" imported");
-                    continue;
-                }
-                else{
-                    break;
-                }
-            }
-            */
-            var promise1 = new Promise(function(resolve,reject){
-                gais2json(total_column,fname[i],function(result){
-                    resolve(result);   
-                });
-
-            });
-            promise1.then(function(value){
-                //console.log("["+value+"] done");
-                fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
-                    if(err){
-                        //console.log("write log false:"+error);
-                    }
-                });
-                if(count_importfile==nums){
-                    console.log("All list imported.");
-                }
-            }).catch(function(error){
-                fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
-                    if(err){
-                        //console.log("write log false:"+error);
-                    }
-                });
-                clearInterval(tag);
-            });
-
-            i++;
-            count_importfile++;
-            /*
-            for(;i<nums;i++,count_importfile++){
-                if(importedList.get(fname[i])!==undefined){
-                    
-                    //console.log(fname[i]+" imported");
-                    continue;
-                }
-                else{
-                    break;
-                }
-            }
-            */
-            if(count_importfile==nums){
-                console.log("All list imported.");
-                return;
-            }
-
-            tag = setInterval(function(){
-                var promise = new Promise(function(resolve,reject){
-                    gais2json(total_column,fname[i],function(result){
-                        resolve(result);   
-                    });
-
-                });
-                promise.then(function(value){
-                    //console.log("["+value+"] done");
-                    fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
-                        if(err){
-                            //console.log("write log false:"+error);
-                        }
-                    });
-
-                    count_importfile++;
-                    if(count_importfile==nums){
-                        console.log("All list imported.");
-                    }
-                }).catch(function(error){
-                    fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
-                        if(err){
-                            //console.log("write log false:"+error);
-                        }
-                    });
-                    clearInterval(tag);
-                });
-
-                i++;
-                /*
-                for(;i<nums;i++){
-                    if(importedList.get(fname[i])!==undefined){
-                        //console.log(fname[i]+" imported");
-                        continue;
-                    }
-                    else{
-                        break;
-                    }
-                }
-                */
-                if(i>nums){
-                    //console.log("Stop interval and watting....");
-                    clearInterval(tag);
-                }
-            },60*1000);
+    readImportedList("/home/crazyrabbit/import2elastic/logs/1_total_list.list",function(){
+        connect2DB(ip,port,function(stat){
+            start();
         });
-        //job.start();
     });
-    
-//});
 
 }
 else if(process.argv[2]=='group'){
@@ -148,7 +55,7 @@ else if(process.argv[2]=='group'){
     var dataDir = setting['groupsDir'];
 
     connect2DB(ip,port,function(stat){
-        readlist(dataDir,datafilename,function(fname,total_column){
+        readlist(dataDir,datafilename,function(total_column){
             gais2json(total_column,dataDir,function(result){
                 console.log("["+result+"] done");
             });
@@ -161,15 +68,172 @@ else{
     process.exit();
 
 }
+/*
+import_bot.on("afile_done",function(){
+    if(import_index==nums){
+        console.log("All list imported.");
+    }
+    else{
+        var promise1 = new Promise(function(resolve,reject){
+            console.log("["+fname[import_index]+"] start");
+            gais2json(total_column,fname[import_index],function(result){
+                resolve(result);   
+            });
 
+        });
+        promise1.then(function(value){
+            console.log("["+value+"] done");
+            fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
+                if(err){
+                    console.log(err);
+                }
+            });
+            if(import_index==nums){
+                console.log("All list imported.");
+            }
+        }).catch(function(error){
+            fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
+                if(err){
+                    //console.log("write log false:"+error);
+                }
+            });
+        });
 
+        import_index++;
+        count_importfile++;
+    }
+});
+*/
+function start(){
+    var date = dateFormat(new Date(), "yyyymmdd");
+    readlist(dataDir,datafilename,function(total_column){
+        nums = fname.length-1;
+        var i=0;
+        for(i=0;i<nums;i++,count_importfile++){
+            if(typeof importedList.get(fname[i])!=="undefined"){
+                console.log(fname[i]+" imported");
+                continue;
+            }
+            else{
+                break;
+            }
+        }
+        var promise1 = new Promise(function(resolve,reject){
+            console.log("["+fname[import_index]+"] start");
+            gais2json(total_column,fname[import_index],function(result){
+                resolve(result);   
+            });
+            import_index++;
+
+        });
+        promise1.then(function(value){
+            console.log("["+value+"] done");
+            fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
+                if(err){
+                    console.log(err);
+                }
+            });
+            if(import_index==nums){
+                console.log("All list imported.");
+            }
+        }).catch(function(error){
+            fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
+                if(err){
+                    //console.log("write log false:"+error);
+                }
+            });
+        });
+
+        count_importfile++;
+        /*
+        if(count_importfile==nums){
+            console.log("All list imported.");
+            return;
+        }
+        */
+        /*
+        tag = setInterval(function(){
+            var promise = new Promise(function(resolve,reject){
+                gais2json(total_column,fname[i],function(result){
+                    resolve(result);   
+                });
+
+            });
+            promise.then(function(value){
+                console.log("["+value+"] done");
+                fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
+                    if(err){
+                        //console.log("write log false:"+error);
+                    }
+                });
+
+                count_importfile++;
+                if(count_importfile==nums){
+                    console.log("All list imported.");
+                }
+            }).catch(function(error){
+                console.log('promise err:'error);
+                fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
+                    if(err){
+                        //console.log("write log false:"+error);
+                    }
+                });
+                clearInterval(tag);
+            });
+
+            i++;
+            if(i>nums){
+                console.log("["+i+"]>["+nums+"] Stop interval and waitting....");
+                clearInterval(tag);
+            }
+        },60*1000);
+        */
+    });
+
+}
+
+function anotherimport(total_column){
+    if(import_index==nums){
+        console.log("All list imported.");
+    }
+    else{
+        var promise1 = new Promise(function(resolve,reject){
+            console.log("0.["+fname[import_index]+"] start");
+            gais2json(total_column,fname[import_index],function(result){
+                resolve(result);   
+            });
+            import_index++;
+
+        });
+        promise1.then(function(value){
+            console.log("["+value+"] done");
+            fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
+                if(err){
+                    console.log(err);
+                }
+            });
+            if(import_index==nums){
+                console.log("All list imported.");
+            }
+        }).catch(function(error){
+            console.log("another error:"+error);
+            fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
+                if(err){
+                    //console.log("write log false:"+error);
+                }
+            });
+        });
+        count_importfile++;
+    }
+    
+}
 
 /*not yet*/
 var job = new CronJob({
     cronTime:"50 59 23 * * *",
     onTick:function(){
         var date = dateFormat(new Date(), "yyyymmdd");
-        readlist(dataDir,date,function(fname,total_column){
+        readlist(dataDir,date,function(total_column){
             for(i=0;i<fname.length-1;i++){
 
                 //console.log("["+i+"] "+fname[i]);
@@ -203,16 +267,15 @@ function readlist(dir,filename,fin){
             }
             else{
                 //console.log('data:'+data);
-                var fname = data.split("\n");
+                fname = data.split("\n");
 
                 var total_column = [];
                 var i;
-                /*
-                   for(i=0;i<fname.length-1;i++){
-                   console.log("["+i+"]"+fname[i]);
-                   }
-                   process.exit();
-                   */
+                
+                for(i=0;i<fname.length-1;i++){
+                    //console.log("["+i+"]"+fname[i]);
+                    file_map.set(fname[i],0);
+                }
                 //read gais column's name
                 var column_name = Object.keys(column);
                 column_name.forEach(function(cname){
@@ -229,7 +292,7 @@ function readlist(dir,filename,fin){
                    console.log(total_column[i]+":"+total_column[i].length);
                    }
                    */
-                fin(fname,total_column);
+                fin(total_column);
 
             }
         });
@@ -256,8 +319,9 @@ function readlist(dir,filename,fin){
 function gais2json(cname,dir,fin){
     //read file 2016...
     if(process.argv[2]=="data"){
-        var full_dir = "/home/crazyrabbit/GraphBot_beta/fb_data/Taiwan"+dir;
-        readGaisdata(cname,full_dir,function(stat){
+        var full_dir = "/home/crazyrabbit/GraphBot_beta/fb_data/"+dir;
+        readGaisdata(cname,full_dir,dir,function(stat){
+            console.log("gais2json:"+stat);
             fin(stat);
         });   
     }
@@ -281,7 +345,7 @@ function readImportedList(filename,fin){
     var lr = new LineByLineReader(filename,options);
     lr.on('error', function (err) {
         console.log("["+filename+"]error:"+err);
-        fs.appedFile("./logs/err_filename",filename+"\n",function(err){
+        fs.appendFile("./logs/err_filename",filename+"\n",function(err){
             
         });
     });
@@ -333,16 +397,7 @@ function readGaisgroups(cname,filename,fin){
                     
                     setTimeout(function(){
                         import2db(dbname,tname,record);
-                    },1*1000);
-                    
-                    if(import_record_nums>60){
-                        import_record_nums=1;
-                        lr.pause();
-                        setTimeout(function(){
-                            lr.resume();
-                        },10*1000);
-
-                    }
+                    },500);
                     
                     content = [];
                 if(S(line).left(cname[i].length).s==cname[i]){
@@ -377,22 +432,14 @@ function readGaisgroups(cname,filename,fin){
         //fs.appendFile("./test.record",record+"\n",function(){});
         setTimeout(function(){
             import2db(dbname,tname,record);
-        },1*1000);
+        },500);
         
-        if(import_record_nums>60){
-            import_record_nums=1;
-            lr.pause();
-            setTimeout(function(){
-                lr.resume();
-            },60*1000);
-
-        }
         content = [];
         //console.log("read ["+filename+"] done");
         fin(filename);
     });
 }
-function readGaisdata(cname,filename,fin){
+function readGaisdata(cname,filename,real_filename,fin){
     var i;
     var body_flag=0,description_flag=0;
     var content = [];
@@ -434,17 +481,18 @@ function readGaisdata(cname,filename,fin){
 
                     import_record_nums++;
                     //fs.appendFile("./test.record",record+"\n",function(){});
+                    var random_time = parseInt(Math.floor(Math.random()*(60)+1));
+                    //console.log('random_time:'+random_time);
                     setTimeout(function(){
-                        import2db(dbname,tname,record);
-                    },import_record_nums*1000);
+                        now_imports++;
+                        import2db(cname,real_filename,dbname,tname,record,fin);
+                    },random_time*100);
                     
-                    if(import_record_nums>60){
-                        import_record_nums=1;
+                    if(now_imports>100){
                         lr.pause();
                         setTimeout(function(){
                             lr.resume();
                         },10*1000);
-
                     }
                     content = [];
                 }
@@ -469,7 +517,6 @@ function readGaisdata(cname,filename,fin){
                 line = S(line).right(line.length-cname[i].length-1).s;
                 description += line;
                 //console.log("["+i+"]"+cname[i]+":");
-                
                 break;
             }
             else if(S(line).left(cname[i].length).s==cname[i]){
@@ -504,6 +551,7 @@ function readGaisdata(cname,filename,fin){
 
     });
     lr.on('end',function(){
+
         var record = JSON.stringify({
             title:content[0],
             source:content[1],
@@ -517,92 +565,168 @@ function readGaisdata(cname,filename,fin){
 
         import_record_nums++;
         //fs.appendFile("./test.record",record+"\n",function(){});
+        var random_time = parseInt(Math.floor(Math.random()*(60)+1));
+        //console.log('random_time:'+random_time);
         setTimeout(function(){
-            import2db(dbname,tname,record);
-        },import_record_nums*1000);
+            file_import_end=1;
+            now_imports++;
+            import2db(cname,real_filename,dbname,tname,record,fin);
+        },random_time*100);
         
-        if(import_record_nums>60){
-            import_record_nums=1;
+        if(now_imports>100){
             lr.pause();
             setTimeout(function(){
                 lr.resume();
-            },60*1000);
-
+            },10*1000);
         }
         content = [];
         //console.log("read ["+filename+"] done");
-        fin(filename);
+        //fin(filename);
     });
 }
-function import2db(dname,tname,content){
-    var date = dateFormat(new Date(), "yyyymmdd");
-    var for_id = JSON.parse(content);
-    if(process.argv[2]=="data"){
-        var url = for_id['url'];
-    }
-    else if(process.argv[2]=="group"){
-        var url = for_id['id'];
-    }
+function import2db(cname,filename,dname,tname,content,fin){
 
-    client.create({
-        index:dbname,
-        type:table,
-        id:url,
-        body:content
-    },function(error,response){
-        if(!error&&!response.error){
-            /*
-            var result = JSON.stringify(response);
-            fs.appendFile("logs/success.log",result+"\n",function(err){
-                if(err){
-                    //console.log("write log false:"+error);
-                }
-            });
-            */
+    var date = dateFormat(new Date(), "yyyymmdd");
+    try{
+        var for_id = JSON.parse(content);
+        if(process.argv[2]=="data"){
+            var url = for_id['url'];
         }
-        else{
-            //console.log("write log false");
-            var temp="",code="";
-            if(response!==undefined){
-                temp = JSON.stringify(response.error);
-                code = response.status;
-                if(code!="409"&&code!="200"&&code!="201"){
-                    fs.appendFile("logs/err_"+date+".content",content+"\n",function(err){
+        else if(process.argv[2]=="group"){
+            var url = for_id['id'];
+        }
+        client.create({
+            index:dbname,
+            type:table,
+            id:url,
+            body:content
+        },function(error,response){
+            if(file_map.get(filename)!=0){
+                now_imports--;
+                return;
+            }
+            if(!error&&!response.error){
+                now_imports--;
+                console.log("0.["+filename+"]now_imports:"+now_imports);
+                //console.log("file_import_end:"+file_import_end);
+                //console.log("file_map.get("+filename+")"+file_map.get(filename));
+                if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
+                    file_import_end=0;
+                    file_map.set(filename,1);
+                    //import_bot.emit('afile_done');
+                    var date = dateFormat(new Date(), "yyyymmdd");
+                    console.log("1.["+filename+"] done");
+                    fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
+                        if(err){
+                            console.log(err);
+                        }
+                    });
+                    if(import_index==nums){
+                        console.log("All list imported.");
+                    }
+                    anotherimport(cname);
+                    //fin(filename);
+                }
+                /*
+                   var result = JSON.stringify(response);
+                   fs.appendFile("logs/success.log",result+"\n",function(err){
+                   if(err){
+                //console.log("write log false:"+error);
+                }
+                });
+                */
+            }
+            else{
+                //console.log("write log false");
+                var temp="",code="";
+                if(typeof response!=="undefined"){
+                    temp = JSON.stringify(response.error);
+                    code = response.status;
+                    if(code!="409"&&code!="200"&&code!="201"){
+                        fs.appendFile("logs/err_"+date+".content",content+"\n",function(err){
+                            if(err){
+                                //console.log("write log false:"+error);
+                            }
+                        });
+
+                    }
+                }
+                else{
+                    temp = error;
+                    code = "503";
+                }
+
+                if(code=="503"){
+                    fs.appendFile("logs/restart_"+date+".log","code:"+code+"\n"+temp+"\ncontent:"+content+"--\n",function(err){
                         if(err){
                             //console.log("write log false:"+error);
                         }
-                    });
 
+                    });
+                    //console.log("Sleep for 1 munutes...");
+                    var random_time = parseInt(Math.floor(Math.random()*(60)+1));
+                    console.log("Reimport after "+random_time+" secs");
+                    setTimeout(function(){
+                        import2db(cname,filename,dname,tname,content,fin);
+                    },random_time*1000);
+                }
+                else if(code!="409"){
+                    now_imports--;
+                    console.log("1.["+filename+"]now_imports:"+now_imports);
+                    //console.log("file_import_end:"+file_import_end);
+                    //console.log("file_map.get("+filename+")"+file_map.get(filename));
+                    if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
+                        file_import_end=0;
+                        file_map.set(filename,1);
+                        //import_bot.emit('afile_done');
+                        var date = dateFormat(new Date(), "yyyymmdd");
+                        console.log("2.["+filename+"] done");
+                        fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
+                            if(err){
+                                console.log(err);
+                            }
+                        });
+                        if(import_index==nums){
+                            console.log("All list imported.");
+                        }
+                        anotherimport(cname);
+                        //fin(filename);
+                    }
+                    fs.appendFile("logs/err_"+date+".log","code:"+code+"\n"+temp+"\n--\n",function(err){
+                        if(err){
+                            //console.log("write log false:"+error);
+                        }
+
+                    });
+                }
+                else{
+                    now_imports--;
+                    console.log("2.["+filename+"]now_imports:"+now_imports);
+                    //console.log("file_import_end:"+file_import_end);
+                    //console.log("file_map.get("+filename+")"+file_map.get(filename));
+                    if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
+
+                        file_import_end=0;
+                        file_map.set(filename,1);
+                        //import_bot.emit('afile_done');
+                        var date = dateFormat(new Date(), "yyyymmdd");
+                        console.log("3.["+filename+"] done");
+                        fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
+                            if(err){
+                                console.log(err);
+                            }
+                        });
+                        if(import_index==nums){
+                            console.log("All list imported.");
+                        }
+                        anotherimport(cname);
+                        //fin(filename);
+                    }
                 }
             }
-            else{
-                temp = error;
-                code = "503";
-            }
-
-            if(code=="503"){
-                fs.appendFile("logs/restart_"+date+".log","code:"+code+"\n"+temp+"\ncontent:"+content+"--\n",function(err){
-                    if(err){
-                        //console.log("write log false:"+error);
-                    }
-
-                });
-                //console.log("Sleep for 1 munutes...");
-                //sleep.sleep(60);
-                console.log("Reimport after 1 minutes");
-                setTimeout(function(){
-                    import2db(dname,tname,content);
-                },60*1000);
-            }
-            else if(code!="409"){
-                fs.appendFile("logs/err_"+date+".log","code:"+code+"\n"+temp+"\n--\n",function(err){
-                    if(err){
-                        //console.log("write log false:"+error);
-                    }
-
-                });
-            }
-        }
-    });
-
+        });
+    }
+    catch(e){
+        console.log('import error:'+e+"\n"+'filename:'+filename+'\ncontent:'+content);
+    }
 }
