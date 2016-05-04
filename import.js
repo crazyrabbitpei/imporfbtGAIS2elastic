@@ -25,6 +25,7 @@ var count_importfile=0;
 var import_index=0;
 
 var now_imports=0;
+var now_imports_ok=0;
 var file_import_end=0;
 var fname;
 var file_map = new HashMap();
@@ -41,7 +42,7 @@ if(process.argv[2]=="data"){
     var column = setting['fb_column'];
     var dataDir = setting['dataDir'];
 
-    readImportedList("/home/crazyrabbit/import2elastic/logs/1_total_list.list",function(){
+    readImportedList("/home/crazyrabbit/import2elastic/logs/2_total_list.list",function(){
         connect2DB(ip,port,function(stat){
             start();
         });
@@ -118,6 +119,7 @@ function start(){
                 break;
             }
         }
+        import_index=i;
         var promise1 = new Promise(function(resolve,reject){
             console.log("["+fname[import_index]+"] start");
             gais2json(total_column,fname[import_index],function(result){
@@ -197,6 +199,17 @@ function anotherimport(total_column){
         console.log("All list imported.");
     }
     else{
+        nums = fname.length-1;
+        var i=0;
+        for(i=import_index;i<nums;i++,count_importfile++,import_index++){
+            if(typeof importedList.get(fname[i])!=="undefined"){
+                console.log(fname[i]+" imported");
+                continue;
+            }
+            else{
+                break;
+            }
+        }
         var promise1 = new Promise(function(resolve,reject){
             console.log("0.["+fname[import_index]+"] start");
             gais2json(total_column,fname[import_index],function(result){
@@ -440,6 +453,7 @@ function readGaisgroups(cname,filename,fin){
     });
 }
 function readGaisdata(cname,filename,real_filename,fin){
+    var records_cnt=0;
     var i;
     var body_flag=0,description_flag=0;
     var content = [];
@@ -483,12 +497,14 @@ function readGaisdata(cname,filename,real_filename,fin){
                     //fs.appendFile("./test.record",record+"\n",function(){});
                     var random_time = parseInt(Math.floor(Math.random()*(60)+1));
                     //console.log('random_time:'+random_time);
+                    now_imports++;
+                    records_cnt++;
                     setTimeout(function(){
-                        now_imports++;
                         import2db(cname,real_filename,dbname,tname,record,fin);
                     },random_time*100);
                     
-                    if(now_imports>100){
+                    if(records_cnt>100){
+                        records_cnt=0;
                         lr.pause();
                         setTimeout(function(){
                             lr.resume();
@@ -567,13 +583,15 @@ function readGaisdata(cname,filename,real_filename,fin){
         //fs.appendFile("./test.record",record+"\n",function(){});
         var random_time = parseInt(Math.floor(Math.random()*(60)+1));
         //console.log('random_time:'+random_time);
+        now_imports++;
+        records_cnt++;
+        file_import_end=1;
         setTimeout(function(){
-            file_import_end=1;
-            now_imports++;
             import2db(cname,real_filename,dbname,tname,record,fin);
         },random_time*100);
         
-        if(now_imports>100){
+        if(records_cnt>100){
+            records_cnt=0;
             lr.pause();
             setTimeout(function(){
                 lr.resume();
@@ -601,21 +619,27 @@ function import2db(cname,filename,dname,tname,content,fin){
             id:url,
             body:content
         },function(error,response){
+            /*
             if(file_map.get(filename)!=0){
                 now_imports--;
                 return;
             }
+            */
+            var temp="",code="";
             if(!error&&!response.error){
-                now_imports--;
-                console.log("0.["+filename+"]now_imports:"+now_imports);
+                now_imports_ok++;
+                console.log("0.["+filename+"]now_imports:"+now_imports+" now_imports_ok:"+now_imports_ok);
                 //console.log("file_import_end:"+file_import_end);
                 //console.log("file_map.get("+filename+")"+file_map.get(filename));
-                if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
+                //if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
+                if(now_imports==now_imports_ok&&file_import_end==1){
                     file_import_end=0;
+                    now_imports=0;
+                    now_imports_ok=0;
                     file_map.set(filename,1);
                     //import_bot.emit('afile_done');
                     var date = dateFormat(new Date(), "yyyymmdd");
-                    console.log("1.["+filename+"] done");
+                    console.log("0.["+filename+"] done");
                     fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
                         if(err){
                             console.log(err);
@@ -624,8 +648,9 @@ function import2db(cname,filename,dname,tname,content,fin){
                     if(import_index==nums){
                         console.log("All list imported.");
                     }
-                    anotherimport(cname);
-                    //fin(filename);
+                    else{
+                        anotherimport(cname);
+                    }
                 }
                 /*
                    var result = JSON.stringify(response);
@@ -637,27 +662,51 @@ function import2db(cname,filename,dname,tname,content,fin){
                 */
             }
             else{
-                //console.log("write log false");
-                var temp="",code="";
+                //console.log("file_import_end:"+file_import_end);
+                /*
+                if(error){
+                    now_imports_ok++;
+                    console.log("1.["+filename+"]now_imports:"+now_imports+" now_imports_ok:"+now_imports_ok);
+                    console.log(error);
+                }
+                */
                 if(typeof response!=="undefined"){
+                    now_imports_ok++;
+                    console.log("1.["+filename+"]now_imports:"+now_imports+" now_imports_ok:"+now_imports_ok);
                     temp = JSON.stringify(response.error);
                     code = response.status;
                     if(code!="409"&&code!="200"&&code!="201"){
-                        fs.appendFile("logs/err_"+date+".content",content+"\n",function(err){
+                        fs.appendFile("logs/err_"+date+".content","["+code+"]"+content+"\n--\n",function(err){
                             if(err){
                                 //console.log("write log false:"+error);
                             }
                         });
 
                     }
+                    if(now_imports==now_imports_ok&&file_import_end==1){
+                        file_import_end=0;
+                        file_map.set(filename,1);
+                        //import_bot.emit('afile_done');
+                        var date = dateFormat(new Date(), "yyyymmdd");
+                        console.log("1.["+filename+"] done");
+                        fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
+                            if(err){
+                                console.log(err);
+                            }
+                        });
+                        if(import_index==nums){
+                            console.log("All list imported.");
+                        }
+                        else{
+                            anotherimport(cname);
+                        }
+                    }
                 }
                 else{
                     temp = error;
-                    code = "503";
-                }
-
-                if(code=="503"){
-                    fs.appendFile("logs/restart_"+date+".log","code:"+code+"\n"+temp+"\ncontent:"+content+"--\n",function(err){
+                    //code = "503";
+                    code = response.status;
+                    fs.appendFile("logs/restart_"+date+".log","["+code+"]"+temp+"\ncontent:"+content+"--\n",function(err){
                         if(err){
                             //console.log("write log false:"+error);
                         }
@@ -669,59 +718,6 @@ function import2db(cname,filename,dname,tname,content,fin){
                     setTimeout(function(){
                         import2db(cname,filename,dname,tname,content,fin);
                     },random_time*1000);
-                }
-                else if(code!="409"){
-                    now_imports--;
-                    console.log("1.["+filename+"]now_imports:"+now_imports);
-                    //console.log("file_import_end:"+file_import_end);
-                    //console.log("file_map.get("+filename+")"+file_map.get(filename));
-                    if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
-                        file_import_end=0;
-                        file_map.set(filename,1);
-                        //import_bot.emit('afile_done');
-                        var date = dateFormat(new Date(), "yyyymmdd");
-                        console.log("2.["+filename+"] done");
-                        fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
-                            if(err){
-                                console.log(err);
-                            }
-                        });
-                        if(import_index==nums){
-                            console.log("All list imported.");
-                        }
-                        anotherimport(cname);
-                        //fin(filename);
-                    }
-                    fs.appendFile("logs/err_"+date+".log","code:"+code+"\n"+temp+"\n--\n",function(err){
-                        if(err){
-                            //console.log("write log false:"+error);
-                        }
-
-                    });
-                }
-                else{
-                    now_imports--;
-                    console.log("2.["+filename+"]now_imports:"+now_imports);
-                    //console.log("file_import_end:"+file_import_end);
-                    //console.log("file_map.get("+filename+")"+file_map.get(filename));
-                    if(file_import_end==1&&now_imports==0&&file_map.get(filename)==0){
-
-                        file_import_end=0;
-                        file_map.set(filename,1);
-                        //import_bot.emit('afile_done');
-                        var date = dateFormat(new Date(), "yyyymmdd");
-                        console.log("3.["+filename+"] done");
-                        fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
-                            if(err){
-                                console.log(err);
-                            }
-                        });
-                        if(import_index==nums){
-                            console.log("All list imported.");
-                        }
-                        anotherimport(cname);
-                        //fin(filename);
-                    }
                 }
             }
         });
