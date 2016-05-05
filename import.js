@@ -19,7 +19,6 @@ const import_bot = new MyEmitter();
 var client;
 var tag;
 var import_again=0;
-var nums = 0;
 var import_record_nums=0;
 var count_importfile=0;
 var import_index=0;
@@ -42,7 +41,7 @@ if(process.argv[2]=="data"){
     var column = setting['fb_column'];
     var dataDir = setting['dataDir'];
 
-    readImportedList("/home/crazyrabbit/import2elastic/logs/2_total_list.list",function(){
+    readImportedList("/home/crazyrabbit/import2elastic/logs/0_total_list.list",function(){
         connect2DB(ip,port,function(stat){
             start();
         });
@@ -108,7 +107,7 @@ import_bot.on("afile_done",function(){
 function start(){
     var date = dateFormat(new Date(), "yyyymmdd");
     readlist(dataDir,datafilename,function(total_column){
-        nums = fname.length-1;
+        var nums = fname.length-1;
         var i=0;
         for(i=0;i<nums;i++,count_importfile++){
             if(typeof importedList.get(fname[i])!=="undefined"){
@@ -118,6 +117,11 @@ function start(){
             else{
                 break;
             }
+        }
+        if(import_index==nums){
+            console.log("All list imported.");
+            console("import_index:"+import_index+" total files:"+nums);
+            return;
         }
         import_index=i;
         var promise1 = new Promise(function(resolve,reject){
@@ -130,15 +134,18 @@ function start(){
         });
         promise1.then(function(value){
             console.log("["+value+"] done");
+            var date = dateFormat(new Date(), "yyyymmdd");
             fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
                 if(err){
                     console.log(err);
                 }
             });
+            var nums = fname.length-1;
             if(import_index==nums){
                 console.log("All list imported.");
             }
         }).catch(function(error){
+            var date = dateFormat(new Date(), "yyyymmdd");
             fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
                 if(err){
                     //console.log("write log false:"+error);
@@ -195,11 +202,13 @@ function start(){
 }
 
 function anotherimport(total_column){
+    var nums = fname.length-1;
     if(import_index==nums){
         console.log("All list imported.");
+        console("import_index:"+import_index+" total files:"+nums);
+        return;
     }
     else{
-        nums = fname.length-1;
         var i=0;
         for(i=import_index;i<nums;i++,count_importfile++,import_index++){
             if(typeof importedList.get(fname[i])!=="undefined"){
@@ -220,16 +229,19 @@ function anotherimport(total_column){
         });
         promise1.then(function(value){
             console.log("["+value+"] done");
+            var date = dateFormat(new Date(), "yyyymmdd");
             fs.appendFile("logs/import_"+date+".list",value+"\n",function(err){
                 if(err){
                     console.log(err);
                 }
             });
+            var nums = fname.length-1;
             if(import_index==nums){
                 console.log("All list imported.");
             }
         }).catch(function(error){
             console.log("another error:"+error);
+            var date = dateFormat(new Date(), "yyyymmdd");
             fs.appendFile("logs/err_"+date+".log",error+"\n",function(err){
                 if(err){
                     //console.log("write log false:"+error);
@@ -495,7 +507,7 @@ function readGaisdata(cname,filename,real_filename,fin){
 
                     import_record_nums++;
                     //fs.appendFile("./test.record",record+"\n",function(){});
-                    var random_time = parseInt(Math.floor(Math.random()*(60)+1));
+                    var random_time = parseInt(Math.floor(Math.random()*(10-1+1)+1));
                     //console.log('random_time:'+random_time);
                     now_imports++;
                     records_cnt++;
@@ -503,7 +515,7 @@ function readGaisdata(cname,filename,real_filename,fin){
                         import2db(cname,real_filename,dbname,tname,record,fin);
                     },random_time*100);
                     
-                    if(records_cnt>100){
+                    if(records_cnt>200){
                         records_cnt=0;
                         lr.pause();
                         setTimeout(function(){
@@ -581,7 +593,7 @@ function readGaisdata(cname,filename,real_filename,fin){
 
         import_record_nums++;
         //fs.appendFile("./test.record",record+"\n",function(){});
-        var random_time = parseInt(Math.floor(Math.random()*(60)+1));
+        var random_time = parseInt(Math.floor(Math.random()*(10-1+1)+1));
         //console.log('random_time:'+random_time);
         now_imports++;
         records_cnt++;
@@ -590,7 +602,7 @@ function readGaisdata(cname,filename,real_filename,fin){
             import2db(cname,real_filename,dbname,tname,record,fin);
         },random_time*100);
         
-        if(records_cnt>100){
+        if(records_cnt>200){
             records_cnt=0;
             lr.pause();
             setTimeout(function(){
@@ -603,6 +615,7 @@ function readGaisdata(cname,filename,real_filename,fin){
     });
 }
 function import2db(cname,filename,dname,tname,content,fin){
+
 
     var date = dateFormat(new Date(), "yyyymmdd");
     try{
@@ -645,6 +658,7 @@ function import2db(cname,filename,dname,tname,content,fin){
                             console.log(err);
                         }
                     });
+                    var nums = fname.length-1;
                     if(import_index==nums){
                         console.log("All list imported.");
                     }
@@ -671,41 +685,58 @@ function import2db(cname,filename,dname,tname,content,fin){
                 }
                 */
                 if(typeof response!=="undefined"){
-                    now_imports_ok++;
-                    console.log("1.["+filename+"]now_imports:"+now_imports+" now_imports_ok:"+now_imports_ok);
                     temp = JSON.stringify(response.error);
                     code = response.status;
-                    if(code!="409"&&code!="200"&&code!="201"){
-                        fs.appendFile("logs/err_"+date+".content","["+code+"]"+content+"\n--\n",function(err){
-                            if(err){
-                                //console.log("write log false:"+error);
+                    if(code=="429"){
+                        var date = dateFormat(new Date(), "yyyymmdd");
+                        var random_time = parseInt(Math.floor(Math.random()*(60)+1));
+                        var url = for_id['url']
+                        console.log("["+code+"]["+url+"]Reimport after "+random_time+" secs");
+                        setTimeout(function(){
+                            import2db(cname,filename,dname,tname,content,fin);
+                        },random_time*1000);
+                    }
+                    else{
+                        now_imports_ok++;
+                        console.log("1.["+filename+"]now_imports:"+now_imports+" now_imports_ok:"+now_imports_ok);
+                        if(code!="409"&&code!="200"&&code!="201"&&code!="429"){
+                            var date = dateFormat(new Date(), "yyyymmdd");
+                            fs.appendFile("logs/err_"+date+".content","["+code+"]"+content+"\n--\n",function(err){
+                                if(err){
+                                    //console.log("write log false:"+error);
+                                }
+                            });
+
+                        }
+                        if(now_imports==now_imports_ok&&file_import_end==1){
+                            file_import_end=0;
+                            now_imports=0;
+                            now_imports_ok=0;
+                            file_map.set(filename,1);
+                            //import_bot.emit('afile_done');
+                            var date = dateFormat(new Date(), "yyyymmdd");
+                            console.log("1.["+filename+"] done");
+                            fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
+                                if(err){
+                                    console.log(err);
+                                }
+                            });
+                            var nums = fname.length-1;
+                            if(import_index==nums){
+                                console.log("All list imported.");
                             }
-                        });
+                            else{
+                                anotherimport(cname);
+                            }
+                        }
 
                     }
-                    if(now_imports==now_imports_ok&&file_import_end==1){
-                        file_import_end=0;
-                        file_map.set(filename,1);
-                        //import_bot.emit('afile_done');
-                        var date = dateFormat(new Date(), "yyyymmdd");
-                        console.log("1.["+filename+"] done");
-                        fs.appendFile("logs/import_"+date+".list",filename+"\n",function(err){
-                            if(err){
-                                console.log(err);
-                            }
-                        });
-                        if(import_index==nums){
-                            console.log("All list imported.");
-                        }
-                        else{
-                            anotherimport(cname);
-                        }
-                    }
+
                 }
                 else{
                     temp = error;
-                    //code = "503";
-                    code = response.status;
+                    code = "503";
+                    var date = dateFormat(new Date(), "yyyymmdd");
                     fs.appendFile("logs/restart_"+date+".log","["+code+"]"+temp+"\ncontent:"+content+"--\n",function(err){
                         if(err){
                             //console.log("write log false:"+error);
@@ -714,7 +745,8 @@ function import2db(cname,filename,dname,tname,content,fin){
                     });
                     //console.log("Sleep for 1 munutes...");
                     var random_time = parseInt(Math.floor(Math.random()*(60)+1));
-                    console.log("Reimport after "+random_time+" secs");
+                    var url = for_id['url']
+                    console.log("["+url+"]Reimport after "+random_time+" secs");
                     setTimeout(function(){
                         import2db(cname,filename,dname,tname,content,fin);
                     },random_time*1000);
